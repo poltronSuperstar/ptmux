@@ -43,6 +43,7 @@ ptmux attach NAME     # shortcut for: tmux attach -t NAME
 ptmux split [u|d|l|r] [size]   # split current pane
 ptmux save NAME       # save current tmux layout
 ptmux restore NAME    # restore a saved layout
+ptmux kill NAME       # kill a tmux session
 ```
 
 ## Development

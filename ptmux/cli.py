@@ -17,6 +17,10 @@ def list_sessions() -> None:
 def attach(name: str) -> None:
     subprocess.run(["tmux", "attach-session", "-t", name])
 
+def kill_session(name: str) -> None:
+    """Kill the given tmux session."""
+    subprocess.run(["tmux", "kill-session", "-t", name], check=True)
+
 def split(direction: str, size: str | None = None) -> None:
     args = ["tmux", "split-window"]
     if direction in ("u", "up"):
@@ -99,6 +103,8 @@ def main(argv: list[str] | None = None) -> None:
     sv.add_argument("name")
     rs = sub.add_parser("restore")
     rs.add_argument("name")
+    k = sub.add_parser("kill")
+    k.add_argument("name")
     ns = p.parse_args(argv)
 
     if ns.cmd == "list":
@@ -111,6 +117,8 @@ def main(argv: list[str] | None = None) -> None:
         save_session(ns.name)
     elif ns.cmd == "restore":
         restore_session(ns.name)
+    elif ns.cmd == "kill":
+        kill_session(ns.name)
 
 if __name__ == "__main__":
     main()
