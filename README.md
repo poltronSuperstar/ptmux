@@ -9,6 +9,12 @@ from scripts *and* the command line.
 pip install -e .
 ```
 
+Or, for editable development install:
+
+```bash
+pip install -e .
+```
+
 Requires `tmux` reachable in `$PATH`.
 
 ## Library usage
