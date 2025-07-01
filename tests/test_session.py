@@ -28,24 +28,24 @@ def test_session_pwd(mock_subprocess):
 
 def test_exec_wait_returns_output(mock_subprocess):
     sess = get("baz")
-    # Patch _capture to simulate tmux output
-    marker = "__PTMUX_marker__"
-    lines = ["output line 1", "output line 2", marker]
-    with patch.object(sess, "_capture", return_value=lines):
-        with patch("uuid.uuid4", return_value=types.SimpleNamespace(hex="marker")):
+    pre = ["$"]
+    final = ["$", "echo hi", "output line 1", "output line 2", "$"]
+    with patch.object(sess, "_capture", side_effect=[pre, final, final]):
+        with patch.object(sess, "_send") as send:
             out = sess.exec_wait("echo hi")
-            assert "output line 1" in out
-            assert "output line 2" in out
+            send.assert_called_with("echo hi")
+            assert out == "output line 1\noutput line 2"
 
 def test_exec_wait_split(mock_subprocess):
     sess = get("baz2")
-    marker = "__PTMUX_marker__"
-    lines = ["stdout here", marker]
-    with patch.object(sess, "_capture", return_value=lines):
-        with patch("uuid.uuid4", return_value=types.SimpleNamespace(hex="marker")):
+    pre = ["$"]
+    final = ["$", "echo hi", "stdout here", "$"]
+    with patch.object(sess, "_capture", side_effect=[pre, final, final]):
+        with patch.object(sess, "_send") as send:
             out = sess.exec_wait("echo hi", split=True)
+            send.assert_called_with("echo hi")
             assert isinstance(out, dict)
-            assert "stdout" in out
+            assert out["stdout"] == "stdout here"
             assert out["stderr"] == ""
 
 def test_exec_nonblocking(mock_subprocess):
@@ -76,3 +76,11 @@ def test_strip_until():
     assert out == ["a", "b", "c"]
     # If marker not found, returns all lines
     assert Session._strip_until(["x", "y"], "Z") == ["x", "y"]
+
+def test_ensure_clears_on_create():
+    with patch("ptmux.session.subprocess") as sp:
+        sp.run.side_effect = [types.SimpleNamespace(returncode=1), types.SimpleNamespace(returncode=0), types.SimpleNamespace(returncode=0)]
+        sp.check_output.return_value = ""
+        Session("new")
+        sp.run.assert_any_call(["tmux", "new-session", "-d", "-s", "new"], check=True)
+        sp.run.assert_any_call(["tmux", "send-keys", "-t", "new", "clear", "C-m"], check=True)

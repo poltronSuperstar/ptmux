@@ -24,6 +24,10 @@ from ptmux import get   # or: from ptmux import session as get
 
 sess = get("build")
 
+# When created for the first time, the session clears its pane so you start
+# with a clean view. Commands sent with ``exec_wait`` are run exactly as if you
+# typed them yourself and the call returns once the shell prompt is back.
+
 print(sess.pwd)                       # current working dir inside the pane
 sess.exec_wait("make test")           # run & wait, combined stdout/stderr
 out = sess.exec_wait("ls -1", True)   # ⇒ {"stdout": "...", "stderr": ""}
