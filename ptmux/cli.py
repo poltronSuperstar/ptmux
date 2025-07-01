@@ -4,8 +4,15 @@ import sys, subprocess, argparse
 from pathlib import Path
 
 def list_sessions() -> None:
-    out = subprocess.check_output(["tmux", "list-sessions", "-F", "#S"], text=True)
-    print("\n".join(sorted(out.strip().splitlines())))
+    try:
+        out = subprocess.check_output(["tmux", "list-sessions", "-F", "#S"], text=True, stderr=subprocess.DEVNULL)
+        sessions = sorted(out.strip().splitlines())
+        if sessions:
+            print("\n".join(sessions))
+        else:
+            print("(no tmux sessions found)")
+    except subprocess.CalledProcessError:
+        print("(no tmux server running or no sessions found)")
 
 def attach(name: str) -> None:
     subprocess.run(["tmux", "attach-session", "-t", name])
