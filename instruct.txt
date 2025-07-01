@@ -1,0 +1,195 @@
+```
+ptmux/
+├── __init__.py
+├── session.py         # core lib
+├── cli.py             # `ptmux` console-script
+└── README.md
+```
+
+---
+
+### `ptmux/__init__.py`
+
+```python
+"""Public façade – importables are exposed here."""
+from .session import get as get               # idempotent session fetch
+from .session import Session                  # direct use if needed
+```
+
+---
+
+### `ptmux/session.py`
+
+```python
+from __future__ import annotations
+import subprocess, uuid, time, random, string, re
+from typing import Dict, List, Optional
+
+__all__ = ["Session", "get"]
+
+_SESS_CACHE: Dict[str, "Session"] = {}
+_PATH_RE = re.compile(r'^/?([\w.\-]+/?)*$')    # quick unix path checker
+
+def get(name: str = "default") -> "Session":
+    """Idempotent factory – always returns the same Session object."""
+    if name not in _SESS_CACHE:
+        _SESS_CACHE[name] = Session(name)
+    return _SESS_CACHE[name]
+
+
+class Session:
+    """Tiny wrapper around a persistent tmux session."""
+    PROMPTS = (">", "➜", "$")                 # tweak if your shell differs
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self._ensure()
+
+    # -------------- public API ---------------- #
+
+    @property
+    def pwd(self) -> str:
+        return self.exec_wait("pwd").strip()
+
+    def exec_wait(self, cmd: str, split: bool = False, timeout: int = 60):
+        """Run *cmd* synchronously; return str or {"stdout", "stderr"}."""
+        marker = f"__PTMUX_{uuid.uuid4().hex}__"
+        # 2>&1 to merge pipes (tmux only shows combined output)
+        self._send(f"{cmd} 2>&1; echo {marker}")
+
+        start, last_seen = time.time(), None
+        while time.time() - start < timeout:
+            lines = self._capture()
+            if any(marker in l for l in lines):
+                out = "\n".join(self._strip_until(lines, marker)).rstrip()
+                return {"stdout": out, "stderr": ""} if split else out
+            # break when buffer stops changing for ~0.2 s
+            if lines == last_seen:
+                time.sleep(0.2)
+            else:
+                last_seen = lines
+        raise TimeoutError(f"{cmd!r} timed out in session {self.name!r}")
+
+    def exec(self, cmd: str) -> None:
+        """Fire-and-forget command (non-blocking)."""
+        self._send(cmd)
+
+    # slice operator – eg. session[-30:]
+    def __getitem__(self, key):
+        if isinstance(key, slice) or isinstance(key, int):
+            lines = self._capture()
+            return lines[key]
+        raise TypeError("Session only supports int/slice indexing")
+
+    # -------------- internals ----------------- #
+
+    def _ensure(self):
+        if subprocess.run(["tmux", "has-session", "-t", self.name]).returncode:
+            subprocess.run(["tmux", "new-session", "-d", "-s", self.name], check=True)
+
+    def _send(self, *keys: str):
+        subprocess.run(["tmux", "send-keys", "-t", self.name, *keys, "C-m"], check=True)
+
+    def _capture(self) -> List[str]:
+        out = subprocess.check_output(
+            ["tmux", "capture-pane", "-pS", "-10000", "-t", self.name],
+            text=True
+        )
+        return out.splitlines()
+
+    @staticmethod
+    def _strip_until(lines: List[str], marker: str) -> List[str]:
+        try:
+            idx = next(i for i, l in enumerate(lines) if marker in l)
+            return lines[:idx]
+        except StopIteration:
+            return lines
+```
+
+---
+
+### `ptmux/cli.py`
+
+```python
+#!/usr/bin/env python3
+"""Minimal CLI – exposes `ptmux list` and `ptmux attach NAME`."""
+import sys, subprocess, argparse
+from pathlib import Path
+
+def list_sessions() -> None:
+    out = subprocess.check_output(["tmux", "list-sessions", "-F", "#S"], text=True)
+    print("\n".join(sorted(out.strip().splitlines())))
+
+def attach(name: str) -> None:
+    subprocess.run(["tmux", "attach-session", "-t", name])
+
+def main(argv: list[str] | None = None) -> None:
+    p = argparse.ArgumentParser(prog="ptmux", description="Tiny tmux helper")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("list")
+    a = sub.add_parser("attach")
+    a.add_argument("name")
+    ns = p.parse_args(argv)
+
+    if ns.cmd == "list":
+        list_sessions()
+    elif ns.cmd == "attach":
+        attach(ns.name)
+
+if __name__ == "__main__":
+    main()
+```
+
+Make the script executable and expose it in `pyproject.toml` / `setup.cfg`:
+
+```toml
+[project.scripts]
+ptmux = "ptmux.cli:main"
+```
+
+---
+
+### `README.md`
+
+````markdown
+# ptmux
+
+Tiny, Pythonic wrapper around **tmux** to keep named sessions alive and easy to use  
+from scripts *and* the command line.
+
+## Install
+```bash
+pip install -e .
+````
+
+Requires `tmux` reachable in `$PATH`.
+
+## Library usage
+
+```python
+from ptmux import get   # or: from ptmux import session as get
+
+sess = get("build")
+
+print(sess.pwd)                       # current working dir inside the pane
+sess.exec_wait("make test")           # run & wait, combined stdout/stderr
+out = sess.exec_wait("ls -1", True)   # ⇒ {"stdout": "...", "stderr": ""}
+sess.exec("tail -f log.txt")          # non-blocking
+print(sess[-20:])                     # last 20 lines of buffer
+```
+
+## CLI
+
+```bash
+ptmux list            # show all tmux session names
+ptmux attach build    # shortcut for: tmux attach -t build
+```
+
+Enjoy!
+
+```
+
+---
+
+*Everything else (error handling, path normalisation, packaging metadata) can be added incrementally – this is the lean, working skeleton you asked for.*
+```
