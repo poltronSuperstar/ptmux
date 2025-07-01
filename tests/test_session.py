@@ -60,6 +60,11 @@ def test_session_slice_and_index(mock_subprocess):
         assert sess[-2:] == ["c", "d"]
         assert sess[1] == "b"
 
+def test_trailing_empty_lines_trimmed(mock_subprocess):
+    sess = get("trim")
+    with patch.object(sess, "_capture", return_value=["x", "y", "", "", ""]):
+        assert sess[-10:] == ["x", "y"]
+
 def test_session_invalid_index(mock_subprocess):
     sess = get("slice2")
     with pytest.raises(TypeError):

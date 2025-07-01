@@ -35,7 +35,10 @@ print(sess[-20:])                     # last 20 lines of buffer
 
 ```bash
 ptmux list            # show all tmux session names
-ptmux attach build    # shortcut for: tmux attach -t build
+ptmux attach NAME     # shortcut for: tmux attach -t NAME
+ptmux split [u|d|l|r] [size]   # split current pane
+ptmux save NAME       # save current tmux layout
+ptmux restore NAME    # restore a saved layout
 ```
 
 ## Development

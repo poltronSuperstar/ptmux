@@ -55,6 +55,8 @@ class Session:
     def __getitem__(self, key):
         if isinstance(key, slice) or isinstance(key, int):
             lines = self._capture()
+            while lines and not lines[-1].strip():
+                lines.pop()
             return lines[key]
         raise TypeError("Session only supports int/slice indexing")
 
