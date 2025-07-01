@@ -6,6 +6,7 @@ __all__ = ["Session", "get"]
 
 _SESS_CACHE: Dict[str, "Session"] = {}
 _PATH_RE = re.compile(r'^/?([\w.\-]+/?)*$')    # quick unix path checker
+_OKI = "_OKI_"
 
 def get(name: str = "default") -> "Session":
     """Idempotent factory – always returns the same Session object."""
@@ -38,6 +39,10 @@ class Session:
             lines = self._capture()
             if lines != last_seen:
                 last_seen = lines
+            if len(lines) >= 2 and lines[-2].strip() == _OKI and any(
+                lines[-1].strip().endswith(p) for p in self.PROMPTS
+            ):
+                break
             if lines and any(lines[-1].strip().endswith(p) for p in self.PROMPTS):
                 break
             time.sleep(0.2)
@@ -48,6 +53,8 @@ class Session:
         while new and not new[-1].strip():
             new.pop()
         if new and any(new[-1].strip().endswith(p) for p in self.PROMPTS):
+            new.pop()
+        if new and new[-1].strip() == _OKI:
             new.pop()
         if new and cmd.strip() in new[0]:
             new = new[1:]
@@ -62,7 +69,7 @@ class Session:
     def __getitem__(self, key):
         if isinstance(key, slice) or isinstance(key, int):
             lines = self._capture()
-            while lines and not lines[-1].strip():
+            while lines and (not lines[-1].strip() or lines[-1].strip() == _OKI):
                 lines.pop()
             return lines[key]
         raise TypeError("Session only supports int/slice indexing")
@@ -71,8 +78,24 @@ class Session:
 
     def _ensure(self):
         if subprocess.run(["tmux", "has-session", "-t", self.name]).returncode:
-            subprocess.run(["tmux", "new-session", "-d", "-s", self.name], check=True)
-            subprocess.run(["tmux", "send-keys", "-t", self.name, "clear&&export OKI_ON=1", "C-m"], check=True)
+            subprocess.run([
+                "tmux",
+                "new-session",
+                "-d",
+                "-s",
+                self.name,
+            ], check=True)
+            subprocess.run(["tmux", "send-keys", "-t", self.name, "clear", "C-m"], check=True)
+            hook = (
+                "_oki_after_command() { echo '_OKI_'; }; "
+                "if [ -z '$OKI_ON' ]; then "
+                "if [ -n '$ZSH_VERSION' ]; then "
+                "autoload -Uz add-zsh-hook; add-zsh-hook precmd _oki_after_command; "
+                "elif [ -n '$BASH_VERSION' ]; then "
+                "PROMPT_COMMAND=\"_oki_after_command${PROMPT_COMMAND:+; $PROMPT_COMMAND}\"; "
+                "fi; export OKI_ON=1; fi"
+            )
+            subprocess.run(["tmux", "send-keys", "-t", self.name, hook, "C-m"], check=True)
 
     def _send(self, *keys: str):
         subprocess.run(["tmux", "send-keys", "-t", self.name, *keys, "C-m"], check=True)

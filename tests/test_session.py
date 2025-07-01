@@ -1,6 +1,6 @@
 import pytest
 import types
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 
 import ptmux
 from ptmux.session import Session, get
@@ -79,8 +79,20 @@ def test_strip_until():
 
 def test_ensure_clears_on_create():
     with patch("ptmux.session.subprocess") as sp:
-        sp.run.side_effect = [types.SimpleNamespace(returncode=1), types.SimpleNamespace(returncode=0), types.SimpleNamespace(returncode=0)]
+        sp.run.side_effect = [
+            types.SimpleNamespace(returncode=1),
+            types.SimpleNamespace(returncode=0),
+            types.SimpleNamespace(returncode=0),
+            types.SimpleNamespace(returncode=0),
+        ]
         sp.check_output.return_value = ""
         Session("new")
-        sp.run.assert_any_call(["tmux", "new-session", "-d", "-s", "new"], check=True)
+        sp.run.assert_any_call([
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            "new",
+        ], check=True)
         sp.run.assert_any_call(["tmux", "send-keys", "-t", "new", "clear", "C-m"], check=True)
+        sp.run.assert_any_call(["tmux", "send-keys", "-t", "new", ANY, "C-m"], check=True)
