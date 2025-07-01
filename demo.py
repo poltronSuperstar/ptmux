@@ -12,6 +12,11 @@ from ptmux import get
 
 def main():
     sess = get("demo1")
+    
+    while 1:
+        c = input()
+        r=sess.exec_wait(c)
+        print(r)    
     print(f"Session name: {sess.name}")
 
     print("Current working directory in tmux session:")

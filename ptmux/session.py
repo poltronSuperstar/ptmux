@@ -72,7 +72,7 @@ class Session:
     def _ensure(self):
         if subprocess.run(["tmux", "has-session", "-t", self.name]).returncode:
             subprocess.run(["tmux", "new-session", "-d", "-s", self.name], check=True)
-            subprocess.run(["tmux", "send-keys", "-t", self.name, "clear", "C-m"], check=True)
+            subprocess.run(["tmux", "send-keys", "-t", self.name, "clear&&export OKI_ON=1", "C-m"], check=True)
 
     def _send(self, *keys: str):
         subprocess.run(["tmux", "send-keys", "-t", self.name, *keys, "C-m"], check=True)
