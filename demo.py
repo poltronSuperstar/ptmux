@@ -11,7 +11,7 @@ Demo for ptmux: shows basic usage of the library API.
 from ptmux import get
 
 def main():
-    sess = get("demo")
+    sess = get("demo1")
     print(f"Session name: {sess.name}")
 
     print("Current working directory in tmux session:")
