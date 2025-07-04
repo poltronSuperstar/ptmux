@@ -2,22 +2,34 @@ from __future__ import annotations
 import subprocess, uuid, time, re
 from typing import Dict, List
 
-__all__ = ["Session", "get"]
+__all__ = ["Session", "get", "clear"]
 
 _SESS_CACHE: Dict[str, "Session"] = {}
 _PATH_RE = re.compile(r'^/?([\w.\-]+/?)*$')    # quick unix path checker
 _OKI = "_OKI_"
 
 def get(name: str = "default") -> "Session":
-    """Idempotent factory – always returns the same Session object."""
+    """Idempotent factory – always returns the same ``Session`` object."""
     if name not in _SESS_CACHE:
         _SESS_CACHE[name] = Session(name)
     return _SESS_CACHE[name]
 
 
+def clear(name: str | None = None) -> None:
+    """Clear cached sessions.
+
+    If *name* is ``None`` all cached sessions are removed, otherwise only the
+    session with the given name is discarded.
+    """
+    if name is None:
+        _SESS_CACHE.clear()
+    else:
+        _SESS_CACHE.pop(name, None)
+
+
 class Session:
     """Tiny wrapper around a persistent tmux session."""
-    PROMPTS = (">", "➜", "$")                 # tweak if your shell differs
+    PROMPTS = (">", "➜", "$", "#")             # tweak if your shell differs
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -43,61 +55,28 @@ class Session:
                 return o
     
     
-    def exec_wait(self, cmd: str, split: bool = False, timeout: int = 60):
-        """Run *cmd* synchronously; return str or {"stdout", "stderr"}."""
-        pre = self._capture()
+    def exec_wait(self, cmd: str, split: bool = False, timeout: int = 600):
+        """Run *cmd* synchronously and return its output."""
+
         self._send(cmd)
-        now = time.time()
-        end = now + timeout
-        
-        success = False
-        output_buffer = []
-       
-        while time.time() < end:
-            time.sleep(.1)
-            lines = self._capture()
-            OKI = 0
-            for line in lines[::-1]:
-                if not success:
-                    OKI = self.extract_ts(line)
-                    if OKI> self.last_oki:
-                        self.last_oki=OKI
-                        success=True
-                        continue
-                if success:
-                    if line == "__IKO__": return output_buffer
-                    output_buffer = [line] + output_buffer
-        return 'nope'
-                
-    
-                
-        
-        
-        start, last_seen = time.time(), None
+        start = time.time()
+
         while time.time() - start < timeout:
             lines = self._capture()
-            if lines != last_seen:
-                last_seen = lines
-            if len(lines) >= 2 and lines[-2].strip() == _OKI and any(
-                lines[-1].strip().endswith(p) for p in self.PROMPTS
-            ):
-                break
             if lines and any(lines[-1].strip().endswith(p) for p in self.PROMPTS):
                 break
             time.sleep(0.2)
         else:
             raise TimeoutError(f"{cmd!r} timed out in session {self.name!r}")
 
-        new = lines[len(pre):]
-        while new and not new[-1].strip():
-            new.pop()
-        if new and any(new[-1].strip().endswith(p) for p in self.PROMPTS):
-            new.pop()
-        if new and new[-1].strip() == _OKI:
-            new.pop()
-        if new and cmd.strip() in new[0]:
-            new = new[1:]
-        out = "\n".join(new).rstrip()
+        # remove the trailing prompt
+        out_lines = lines[:-1]
+
+        # drop command echo if present
+        if out_lines and cmd.strip() in out_lines[0]:
+            out_lines = out_lines[1:]
+
+        out = "\n".join(out_lines).rstrip()
         return {"stdout": out, "stderr": ""} if split else out
 
     def exec(self, cmd: str) -> None:
@@ -108,11 +87,11 @@ class Session:
     def __getitem__(self, key):
         if isinstance(key, slice) or isinstance(key, int):
             lines = self._capture()
-            def is_sep(l:str)->bool:
-                return l=='__IKO__' or self.extract_ts(l)>0                
-            while lines and (not lines[-1].strip() or is_sep(lines[-1].strip())):
-                lines.pop()
-            return lines[key]
+            filtered = [
+                l for l in lines
+                if l.strip() and l.strip() != "__IKO__" and not l.strip().startswith("_OKI_")
+            ]
+            return filtered[key]
         raise TypeError("Session only supports int/slice indexing")
 
     # -------------- internals ----------------- #
