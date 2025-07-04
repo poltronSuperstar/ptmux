@@ -55,3 +55,12 @@ def test_getitem_filters_markers():
 def test_exec_wait_default_timeout():
     sig = inspect.signature(Session.exec_wait)
     assert sig.parameters["timeout"].default == 600
+
+
+def test_start_marker_and_clear_history():
+    cleanup("start")
+    sess = get("start")
+    out = sess.exec_wait("echo first")
+    assert out.strip() == "first"
+    lines = sess[-5:]
+    assert "___STARTS_HERE___" not in "\n".join(lines)
