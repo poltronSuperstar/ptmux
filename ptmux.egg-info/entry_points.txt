@@ -1,0 +1,2 @@
+[console_scripts]
+ptmux = ptmux.cli:main

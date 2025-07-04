@@ -1,0 +1,59 @@
+# ptmux
+
+Tiny, Pythonic wrapper around **tmux** to keep named sessions alive and easy to use  
+from scripts *and* the command line.
+
+## Install
+
+```bash
+pip install -e .
+```
+
+Or, for editable development install:
+
+```bash
+pip install -e .
+```
+
+Requires `tmux` reachable in `$PATH`.
+
+## Library usage
+
+```python
+from ptmux import get   # or: from ptmux import session as get
+
+sess = get("build")
+
+# When created for the first time, the session clears its pane so you start
+# with a clean view. Commands sent with ``exec_wait`` are run exactly as if you
+# typed them yourself and the call returns once the shell prompt is back.
+
+print(sess.pwd)                       # current working dir inside the pane
+sess.exec_wait("make test")           # run & wait, combined stdout/stderr
+out = sess.exec_wait("ls -1", True)   # ⇒ {"stdout": "...", "stderr": ""}
+sess.exec("tail -f log.txt")          # non-blocking
+print(sess[-20:])                     # last 20 lines of buffer
+```
+
+## CLI
+
+```bash
+ptmux list            # show all tmux session names
+ptmux attach NAME     # shortcut for: tmux attach -t NAME
+ptmux split [u|d|l|r] [size]   # split current pane
+ptmux save NAME       # save current tmux layout
+ptmux restore NAME    # restore a saved layout
+ptmux kill NAME       # kill a tmux session
+```
+
+## Development
+
+Run tests with:
+
+```bash
+pytest
+```
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
