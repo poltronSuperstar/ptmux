@@ -1,12 +1,12 @@
 from __future__ import annotations
-import subprocess, uuid, time, re
+import subprocess, time
 from typing import Dict, List
 
 __all__ = ["Session", "get", "clear"]
 
+_START_MARK = "___STARTS_HERE___"
+
 _SESS_CACHE: Dict[str, "Session"] = {}
-_PATH_RE = re.compile(r'^/?([\w.\-]+/?)*$')    # quick unix path checker
-_OKI = "_OKI_"
 
 def get(name: str = "default") -> "Session":
     """Idempotent factory – always returns the same ``Session`` object."""
@@ -33,31 +33,17 @@ class Session:
 
     def __init__(self, name: str) -> None:
         self.name = name
+        self.start_marker = _START_MARK
         self._ensure()
-        self.last_oki = 0
 
     # -------------- public API ---------------- #
 
     @property
     def pwd(self) -> str:
         return self.exec_wait("pwd").strip()
-    def extract_ts(self, s):
-        
-        m = re.match(r"_OKI_(\d+)", s)
-        return int(m.group(1)) if m else -1
-    
-    def find_last_oki(self):
-        lines =self._capture()
-        for l in lines[::-1]:
-            o = self.extract_ts(l)
-            if o>0:
-                self.last_oki = o
-                return o
-    
-    
     def exec_wait(self, cmd: str, split: bool = False, timeout: int = 600):
         """Run *cmd* synchronously and return its output."""
-
+        pre = self._capture()
         self._send(cmd)
         start = time.time()
 
@@ -69,14 +55,23 @@ class Session:
         else:
             raise TimeoutError(f"{cmd!r} timed out in session {self.name!r}")
 
-        # remove the trailing prompt
-        out_lines = lines[:-1]
+        new = lines[len(pre):]
+        while new and not new[-1].strip():
+            new.pop()
+        if new and any(new[-1].strip().endswith(p) for p in self.PROMPTS):
+            new.pop()
+        if new and cmd.strip() in new[0]:
+            new = new[1:]
 
-        # drop command echo if present
-        if out_lines and cmd.strip() in out_lines[0]:
-            out_lines = out_lines[1:]
+        new = [
+            l for l in new
+            if l.strip()
+            and self.start_marker not in l
+            and l.strip() != "__IKO__"
+            and not l.strip().startswith("_OKI_")
+        ]
 
-        out = "\n".join(out_lines).rstrip()
+        out = "\n".join(new).rstrip()
         return {"stdout": out, "stderr": ""} if split else out
 
     def exec(self, cmd: str) -> None:
@@ -87,9 +82,18 @@ class Session:
     def __getitem__(self, key):
         if isinstance(key, slice) or isinstance(key, int):
             lines = self._capture()
+            if self.start_marker:
+                try:
+                    idx = next(i for i, l in enumerate(lines) if self.start_marker in l)
+                    lines = lines[idx + 1 :]
+                except StopIteration:
+                    pass
             filtered = [
                 l for l in lines
-                if l.strip() and l.strip() != "__IKO__" and not l.strip().startswith("_OKI_")
+                if l.strip()
+                and self.start_marker not in l
+                and l.strip() != "__IKO__"
+                and not l.strip().startswith("_OKI_")
             ]
             return filtered[key]
         raise TypeError("Session only supports int/slice indexing")
@@ -112,11 +116,11 @@ class Session:
                 '''_iko_before_command() { echo "__IKO__"; }; '''
                 '''_oki_after_command() { '''
                 '''if [ -n "$BASH_VERSION" ]; then '''
-                '''  [ "$BASH_COMMAND" = "clear" ] && return; '''
+                '''  if [ "$BASH_COMMAND" = "clear" ]; then tmux clear-history -t $TMUX_PANE >/dev/null 2>&1; return; fi; '''
                 '''  ts=$(($(date +%s%N)/1000000)); '''
                 '''  echo "_OKI_${ts}"; '''
                 '''elif [ -n "$ZSH_VERSION" ]; then '''
-                '''  [[ "$PREV_CMD" = "clear" ]] && return; '''
+                '''  if [[ "$PREV_CMD" = "clear" ]]; then tmux clear-history -t $TMUX_PANE >/dev/null 2>&1; return; fi; '''
                 '''  ts=$(($(date +%s%N)/1000000)); '''
                 '''  echo "_OKI_${ts}"; '''
                 '''fi; '''
@@ -136,7 +140,9 @@ class Session:
 
             time.sleep(.1)
             subprocess.run(["tmux", "send-keys", "-t", self.name, "clear", "C-m"], check=True)
-            self.find_last_oki()
+            subprocess.run(["tmux", "clear-history", "-t", self.name], check=True)
+            subprocess.run(["tmux", "send-keys", "-t", self.name, f"echo {_START_MARK}", "C-m"], check=True)
+            time.sleep(.1)
 
 
 
